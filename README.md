@@ -7,7 +7,8 @@
 
 ## 깔아서 쓰기 (Windows)
 
-1. [Releases](https://github.com/shinjaewon1105/seorap/releases/latest) 에서 **`서랍-설치.exe`** 를 받아 실행한다.
+1. **[seorap-setup.exe 받기](https://github.com/shinjaewon1105/seorap/releases/latest/download/seorap-setup.exe)**
+   ([Releases](https://github.com/shinjaewon1105/seorap/releases/latest)) 를 받아 실행한다.
    관리자 권한 없이 내 계정에만 깔린다. "Windows의 PC 보호" 창이 뜨면 **추가 정보 → 실행**.
 2. AI 기능(문장으로 마감 넣기 · 메모 정리)을 쓰려면 [Ollama](https://ollama.com) 를 깔고
    `ollama pull qwen3.5:4b`. 없어도 나머지는 다 된다.
