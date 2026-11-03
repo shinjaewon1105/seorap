@@ -1,0 +1,18 @@
+# 내 자료 — 마감·필기·첨부·클래스룸 비밀값. 절대 올리지 않는다.
+data/
+
+# npm install 이 다시 만든다 (postinstall: vendor.js · brand.js)
+node_modules/
+renderer/vendor/
+
+# 만들어지는 것 — npm run web · npm run dist
+web/
+dist-app/
+download/*.exe
+download/판.json
+.firebase/
+
+# 이 PC 에만 맞는 것
+*.lnk
+.claude/
+*.log

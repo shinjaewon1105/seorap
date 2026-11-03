@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- 코드는 전부 이 폴더 안의 파일이다(CDN 없음). 바깥으로 나가는 것은 Firebase 뿐이고,
+     그것도 클라우드를 켠 경우에만이다. KaTeX가 style 속성을 쓰므로 그것만 허용. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: appfile: https://*.googleapis.com https://*.firebasestorage.app; font-src 'self'; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasestorage.app; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>서랍</title>
+<link rel="stylesheet" href="vendor/katex/katex.min.css">
+<link rel="stylesheet" href="vendor/hljs/github.min.css">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ────────────────────────────── 위 줄 ────────────────────────────── -->
+<header class="toolbar">
+  <div class="brand">
+    <svg viewBox="0 0 32 32" aria-hidden="true">
+      <rect x="3" y="4" width="26" height="24" rx="6" fill="#1a73e8"/>
+      <rect x="7.5" y="9" width="17" height="6.5" rx="2.2" fill="#fff"/>
+      <rect x="7.5" y="17.5" width="17" height="6.5" rx="2.2" fill="#fff" opacity=".6"/>
+      <rect x="14" y="11.5" width="4" height="1.6" rx=".8" fill="#1a73e8"/>
+      <rect x="14" y="20" width="4" height="1.6" rx=".8" fill="#1a73e8" opacity=".75"/>
+    </svg>
+    <span>서랍</span>
+  </div>
+
+  <nav class="seg" id="navSeg">
+    <button data-view="home" class="on">달력</button>
+    <button data-view="files">파일</button>
+  </nav>
+
+  <button class="icon-btn" id="navBack" title="뒤로 (Alt+←)" hidden>
+    <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+  </button>
+  <h1 class="screen-title" id="screenTitle" hidden></h1>
+
+  <div class="spacer"></div>
+
+  <button class="icon-btn" id="btnSearch" title="검색 (Ctrl+F)">
+    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+  </button>
+  <button class="icon-btn" id="btnSettings" title="설정">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.6 1.6 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.6 1.6 0 00-1.8-.3 1.6 1.6 0 00-1 1.5V21a2 2 0 11-4 0v-.1A1.6 1.6 0 008 19.4a1.6 1.6 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.6 1.6 0 00.3-1.8 1.6 1.6 0 00-1.5-1H2a2 2 0 110-4h.1A1.6 1.6 0 004.6 8a1.6 1.6 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.6 1.6 0 001.8.3H9a1.6 1.6 0 001-1.5V2a2 2 0 114 0v.1a1.6 1.6 0 001 1.5 1.6 1.6 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.6 1.6 0 00-.3 1.8V9a1.6 1.6 0 001.5 1H22a2 2 0 110 4h-.1a1.6 1.6 0 00-1.5 1z"/></svg>
+  </button>
+</header>
+
+<!-- ────────────────────── 자연어 입력 (달력에서만) ────────────────────── -->
+<div class="nlbar" id="nlbar">
+  <div class="nl-field">
+    <svg class="nl-spark" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>
+    <input id="nlInput" type="text" autocomplete="off" spellcheck="false"
+           placeholder="마감을 문장으로 적어보세요 —  예) 다음주 화요일까지 적분 수행평가 제출">
+    <span class="nl-hint" id="nlHint">Enter</span>
+  </div>
+  <div class="nl-status" id="nlStatus"></div>
+</div>
+
+<div class="preview-wrap" id="previewWrap" hidden>
+  <div class="preview" id="preview"></div>
+</div>
+
+<!-- ────────────────────────────── 화면들 ────────────────────────────── -->
+<main id="screens">
+
+  <!-- ─────────── 홈 — 달력 + 마감 목록 ─────────── -->
+  <section class="screen home" id="homeView">
+    <div class="cal-main">
+      <div class="cal-bar">
+        <button class="btn-ghost sm" id="btnToday">오늘</button>
+        <button class="icon-btn" id="btnPrev" title="이전 달 (←)">
+          <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+        </button>
+        <button class="icon-btn" id="btnNext" title="다음 달 (→)">
+          <svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+        </button>
+        <span class="period" id="periodLabel">—</span>
+      </div>
+      <div class="cal-area">
+        <section id="monthView" class="view">
+          <div class="dow-row" id="dowRow"></div>
+          <div class="month-grid" id="monthGrid"></div>
+        </section>
+      </div>
+    </div>
+
+    <aside class="home-side">
+      <div class="dl-head">
+        <span class="md-label">마감</span>
+        <span class="task-progress" id="dlCount" hidden></span>
+        <div class="spacer"></div>
+        <button class="btn-ghost sm" id="dlToggleDone" title="끝낸 것 보이기/숨기기">끝낸 것</button>
+        <button class="btn-ghost sm primary" id="dlNew">＋</button>
+      </div>
+      <div class="dl-list" id="dlList"></div>
+    </aside>
+  </section>
+
+  <!-- ─────────── 파일 — 모든 것을 폴더로 ─────────── -->
+  <section class="screen" id="filesView">
+    <div class="fx-bar">
+      <button class="icon-btn" id="fxBack" title="뒤로 (Alt+←)"><svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button>
+      <button class="icon-btn" id="fxFwd" title="앞으로 (Alt+→)"><svg viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg></button>
+      <button class="icon-btn" id="fxUp" title="위 폴더로 (Backspace)"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+      <div class="fx-path" id="fxPath"></div>
+      <input id="fxSearch" class="f-input inline-search" placeholder="이 폴더에서 찾기" autocomplete="off">
+    </div>
+
+    <!-- 탐색기처럼, 자주 쓰는 것은 차림표 안에 숨기지 않고 밖에 내놓는다 -->
+    <div class="fx-cmds">
+      <button class="btn-ghost primary" id="fxNew">＋ 새로 만들기</button>
+      <button class="btn-ghost" id="fxImport" title="컴퓨터의 파일을 원본 자리에 둔 채 연결합니다">파일 연결</button>
+      <span class="fx-div"></span>
+      <button class="btn-ghost" id="fxCut" title="잘라내기 (Ctrl+X)"><svg viewBox="0 0 24 24"><circle cx="6" cy="18" r="3"/><circle cx="18" cy="18" r="3"/><path d="M8.1 15.9 20 4M4 4l11.9 11.9"/></svg><span>잘라내기</span></button>
+      <button class="btn-ghost" id="fxCopy" title="복사 (Ctrl+C)"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg><span>복사</span></button>
+      <button class="btn-ghost" id="fxPaste" title="붙여넣기 (Ctrl+V)"><svg viewBox="0 0 24 24"><path d="M9 4h6v3H9z"/><path d="M15 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2"/></svg><span>붙여넣기</span></button>
+      <button class="btn-ghost" id="fxRename" title="이름 바꾸기 (F2)"><svg viewBox="0 0 24 24"><path d="M4 20h16M4 16l9.5-9.5a2.1 2.1 0 0 1 3 3L7 19l-4 1z"/></svg><span>이름 바꾸기</span></button>
+      <button class="btn-ghost danger" id="fxDelete" title="삭제 (Delete)"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg><span>삭제</span></button>
+      <span class="fx-div"></span>
+      <button class="btn-ghost" id="fxSort" title="정렬 기준"><svg viewBox="0 0 24 24"><path d="M4 7h13M4 12h9M4 17h5M17 10l3-3 3 3M20 7v10"/></svg><span>정렬</span></button>
+      <button class="btn-ghost" id="fxView" title="보기 바꾸기"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg><span>보기</span></button>
+      <button class="btn-ghost ai-btn" id="fxOrganize"
+              title="첨부파일을 폴더로 나눠 줍니다. 디스크의 파일은 움직이지 않습니다."><svg viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg><span>AI 정리</span></button>
+    </div>
+
+    <div class="wish-row" id="fxWishRow" hidden>
+      <input id="fxWish" placeholder="어떻게 나눌까요?  예) 과목별로 · 제출한 것과 아닌 것으로 · 학기별로"
+             autocomplete="off">
+      <button class="btn-ghost sm primary" id="fxGo">나누기</button>
+      <button class="btn-ghost sm" id="fxWishCancel">취소</button>
+    </div>
+
+    <div class="fx-main">
+      <aside class="fx-tree" id="fxTree"></aside>
+      <div class="fx-body list" id="fxBody"></div>
+    </div>
+    <div class="fx-status" id="fxStatus"></div>
+  </section>
+
+  <!-- ─────────── 필기 하나 ─────────── -->
+  <section class="screen" id="noteView">
+    <div class="screen-inner narrow">
+      <div class="note-head">
+        <input class="note-title" id="noteTitle" placeholder="제목 없음">
+        <select class="f-input folder-pick" id="noteFolder" title="어느 폴더에 둘까요"></select>
+        <button class="icon-btn" id="notePin" title="위에 고정">
+          <svg viewBox="0 0 24 24"><path d="M15 3l6 6-3 1-4 4-1 5-6-6-5 1 4-4 1-3z"/></svg>
+        </button>
+        <button class="icon-btn" id="noteDelete" title="지우기">
+          <svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>
+        </button>
+      </div>
+      <div id="noteMd"></div>
+      <hr class="sep">
+      <div id="noteLinks"></div>
+      <div class="note-meta" id="noteMeta"></div>
+    </div>
+  </section>
+
+  <!-- ─────────── 마감 하나 ─────────── -->
+  <section class="screen" id="panel" aria-label="마감 상세">
+    <div class="screen-inner narrow">
+      <div class="panel-head">
+        <span class="dot" id="pColorDot"></span>
+        <input class="p-title" id="pTitle" placeholder="제목 없음">
+        <button class="icon-btn" id="pDelete" title="삭제">
+          <svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>
+        </button>
+      </div>
+
+      <div class="panel-body">
+        <div class="field-row">
+          <svg class="fi" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+          <div class="field-grid">
+            <div class="dpick">
+              <button class="dnav" id="pDatePrev" title="하루 앞으로">‹</button>
+              <button class="dmain" id="pDateBtn" data-cal-anchor title="달력에서 고르기">—</button>
+              <button class="dnav" id="pDateNext" title="하루 뒤로">›</button>
+            </div>
+            <label class="chk big"><input type="checkbox" id="pDone"> 끝냄</label>
+            <label class="chk" title="수업이나 약속처럼 그날 있기만 하면 되는 일">
+              <input type="checkbox" id="pIsEvent"> 마감 아닌 그냥 일정
+            </label>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <svg class="fi" viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
+          <div class="field-grid">
+            <select class="f-input folder-pick" id="pFolder" title="어느 폴더에 둘까요"></select>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <svg class="fi" viewBox="0 0 24 24"><path d="M4 9a8 8 0 0113-6M20 15a8 8 0 01-13 6"/><path d="M4 4v5h5M20 20v-5h-5"/></svg>
+          <div class="field-grid">
+            <button class="summary" id="repeatSummary">반복 안 함</button>
+            <div class="repeat-box" id="repeatBox" hidden>
+              <select id="pRepeat">
+                <option value="none">반복 안 함</option>
+                <option value="daily">매일</option>
+                <option value="weekly">매주</option>
+                <option value="monthly">매월</option>
+                <option value="yearly">매년</option>
+              </select>
+              <div class="wd-picker" id="wdPicker" hidden></div>
+              <label class="until-row" id="untilRow" hidden>
+                <span>종료일</span>
+                <button class="dmain sm" id="pUntilBtn" data-cal-anchor>없음</button>
+                <button class="btn-ghost sm" id="pUntilClear">지우기</button>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <svg class="fi" viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>
+          <div class="field-grid">
+            <select id="pReminder"></select>
+            <div class="remind-at" id="remindAtRow" hidden>
+              <button class="dmain sm" id="pRemindDate" data-cal-anchor>—</button>
+              <input type="text" class="tinput" id="pRemindTime" inputmode="numeric" maxlength="5" placeholder="21:00">
+            </div>
+          </div>
+        </div>
+
+        <hr class="sep">
+        <div id="pMdMount"></div>
+        <hr class="sep">
+        <div id="pLinks"></div>
+        <hr class="sep">
+
+        <div class="att-block" id="attBlock">
+          <div class="md-bar">
+            <span class="md-label">첨부파일</span>
+            <span class="task-progress" id="attCount" hidden></span>
+            <div class="att-actions">
+              <button class="btn-ghost sm ai-btn" id="attOrganize"
+                      title="앱 안에서만 쓰는 폴더로 나눠 줍니다. 디스크의 파일은 움직이지 않습니다.">
+                <svg viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>
+                AI 정리
+              </button>
+              <button class="btn-ghost sm" id="attNewFolder" title="빈 폴더 만들기">＋ 폴더</button>
+              <button class="btn-ghost sm" id="attAdd" title="원본을 그 자리에 둔 채 연결합니다">파일 연결</button>
+            </div>
+          </div>
+
+          <div class="att-tree" id="attList"></div>
+
+          <div class="wish-row" id="orgWishRow" hidden>
+            <input id="orgWish" placeholder="어떻게 나눌까요?  예) 과목별로 · 제출한 것과 아닌 것으로"
+                   autocomplete="off">
+            <button class="btn-ghost sm primary" id="orgGo">나누기</button>
+            <button class="btn-ghost sm" id="orgWishCancel">취소</button>
+          </div>
+
+          <div class="ai-out" id="orgOut" hidden>
+            <div class="ai-head">
+              <span class="ai-name">이렇게 나눌까요?</span>
+              <span class="ai-status" id="orgStatus"></span>
+              <button class="btn-ghost sm" id="orgStop">중지</button>
+            </div>
+            <div class="att-tree preview" id="orgBody"></div>
+            <div class="ai-warn" id="orgWarn" hidden></div>
+            <div class="ai-acts" id="orgActs" hidden>
+              <button class="btn-ghost sm" id="orgCancel">그만두기</button>
+              <button class="btn-ghost sm primary" id="orgApply">이대로 정리</button>
+            </div>
+          </div>
+
+          <div class="dropzone" id="dropzone">
+            파일을 여기에 끌어다 놓으세요<br>
+            <small>원본은 그 자리에 그대로 두고 연결만 합니다</small>
+          </div>
+        </div>
+
+        <div class="panel-foot" id="panelFoot"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ────────────────────────────── 검색 ────────────────────────────── -->
+<div class="modal" id="searchModal" hidden>
+  <div class="modal-card search-card">
+    <div class="search-head">
+      <svg viewBox="0 0 24 24" class="fi"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input id="searchInput" placeholder="마감 · 필기 · 링크 · 파일 전체에서 검색" autocomplete="off">
+      <button class="icon-btn" id="searchClose"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div class="search-results" id="searchResults"></div>
+  </div>
+</div>
+
+<!-- ────────────────────────────── 설정 ────────────────────────────── -->
+<div class="modal" id="settingsModal" hidden>
+  <div class="modal-card settings-card">
+    <div class="modal-head">
+      <h2>설정</h2>
+      <button class="icon-btn" id="settingsClose"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <div class="s-row">
+        <div class="s-label">AI 모델</div>
+        <div class="s-ctl">
+          <select id="setModel"></select>
+          <div class="s-note" id="ollamaNote"></div>
+        </div>
+      </div>
+      <div class="s-row">
+        <div class="s-label">기본 알림</div>
+        <div class="s-ctl">
+          <select id="setReminder">
+            <option value="">알림 없음</option>
+            <option value="0">당일 아침 9시</option>
+            <option value="1440">하루 전 9시</option>
+            <option value="2880">이틀 전 9시</option>
+            <option value="10080">일주일 전 9시</option>
+          </select>
+        </div>
+      </div>
+      <div class="s-row">
+        <div class="s-label">감시 폴더<div class="s-sub">연결한 원본 파일이 이 폴더 안에서 움직이면 자동으로 따라갑니다.</div></div>
+        <div class="s-ctl">
+          <div class="folder-list" id="folderList"></div>
+          <button class="btn-ghost sm" id="addFolder">＋ 폴더 추가</button>
+        </div>
+      </div>
+      <div class="s-row">
+        <div class="s-label">클라우드<div class="s-sub">켜 두면 다른 기기에서도 같은 자료를 봅니다.</div></div>
+        <div class="s-ctl">
+          <div class="s-note" id="cloudNote">클라우드가 꺼져 있습니다.</div>
+          <div class="cloud-diag" id="cloudDiag" hidden></div>
+          <div class="cloud-form" id="cloudForm" hidden>
+            <div class="cloud-tabs">
+              <button type="button" class="cloud-tab on" id="cloudTabIn">로그인</button>
+              <button type="button" class="cloud-tab" id="cloudTabUp">가입</button>
+            </div>
+            <input class="f-input" id="cloudEmail" type="email" placeholder="이메일" autocomplete="username">
+            <input class="f-input" id="cloudPass" type="password" placeholder="비밀번호" autocomplete="current-password">
+            <input class="f-input" id="cloudPass2" type="password" placeholder="비밀번호 다시" autocomplete="new-password" hidden>
+            <div class="cloud-msg" id="cloudErr" hidden></div>
+            <div class="cloud-form-btns">
+              <button class="btn-ghost primary" id="cloudSignIn">로그인</button>
+              <button class="btn-ghost" id="cloudForgot">비밀번호 잊음</button>
+            </div>
+          </div>
+
+          <!-- 이메일 확인 -->
+          <div class="cloud-step" id="cloudVerifyBox" hidden>
+            <div class="cloud-step-title">① 이메일을 확인해 주세요</div>
+            <div class="cloud-step-body" id="cloudVerifyText"></div>
+            <div class="cloud-step-btns">
+              <button class="btn-ghost primary" id="cloudVerifyDone">확인했어요</button>
+              <button class="btn-ghost" id="cloudVerify">메일 다시 보내기</button>
+              <button class="btn-ghost" id="cloudOut1">로그아웃</button>
+            </div>
+          </div>
+
+          <!-- 관리자가 아직 없다 -->
+          <div class="cloud-step" id="cloudAdminBox" hidden>
+            <div class="cloud-step-title">아직 관리자가 없습니다</div>
+            <div class="cloud-step-body">
+              먼저 등록하는 사람이 관리자가 됩니다. 관리자는 새로 가입한 사람을 승인해 줍니다.
+              <b>한 번 정하면 앱에서는 바꿀 수 없습니다.</b>
+            </div>
+            <div class="cloud-msg" id="cloudAdminErr" hidden></div>
+            <div class="cloud-step-btns">
+              <button class="btn-ghost primary" id="cloudClaim">이 계정을 관리자로</button>
+              <button class="btn-ghost" id="cloudOut2">로그아웃</button>
+            </div>
+          </div>
+
+          <!-- 승인 기다리는 중 -->
+          <div class="cloud-step" id="cloudPendingBox" hidden>
+            <div class="cloud-step-title">② 관리자 승인을 기다리는 중</div>
+            <div class="cloud-step-body" id="cloudPendingText"></div>
+            <div class="cloud-step-btns">
+              <button class="btn-ghost" id="cloudOut3">로그아웃</button>
+            </div>
+          </div>
+
+          <div class="cloud-on" id="cloudOn" hidden>
+            <button class="btn-ghost" id="cloudSyncNow">지금 맞추기</button>
+            <button class="btn-ghost" id="cloudSignOut">로그아웃</button>
+          </div>
+        </div>
+      </div>
+      <div class="s-row" id="classroomRow" hidden>
+        <div class="s-label">클래스룸<div class="s-sub">학교 클래스룸의 과제를 마감으로 들여옵니다. 3시간마다 저절로 가져옵니다.</div></div>
+        <div class="s-ctl">
+          <div class="s-note" id="classroomNote"></div>
+          <button class="btn-ghost sm" id="classroomNow">지금 가져오기</button>
+        </div>
+      </div>
+      <div class="s-row" id="getAppRow" hidden>
+        <div class="s-label">PC 앱<div class="s-sub">자연어 입력·메모 정리 같은 AI 기능은 내 컴퓨터의 서랍에서 돕니다.</div></div>
+        <div class="s-ctl">
+          <a class="btn-ghost" id="getAppLink" href="/get/" target="_blank" rel="noopener">내려받기</a>
+        </div>
+      </div>
+      <div class="s-row" id="memberRow" hidden>
+        <div class="s-label">회원 승인<div class="s-sub">가입한 사람은 관리자가 승인해야 자료를 쓸 수 있습니다.</div></div>
+        <div class="s-ctl">
+          <div class="member-list" id="memberList"></div>
+          <button class="btn-ghost" id="memberRefresh">새로 고침</button>
+        </div>
+      </div>
+      <div class="s-row">
+        <div class="s-label">데이터</div>
+        <div class="s-ctl">
+          <div class="s-note" id="dataPath"></div>
+          <button class="btn-ghost sm" id="openData">폴더 열기</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="askModal" hidden>
+  <div class="modal-card ask-card">
+    <h3 id="askTitle"></h3>
+    <p id="askText"></p>
+    <div class="ask-btns" id="askBtns"></div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="vendor/marked.umd.js"></script>
+<script src="vendor/purify.min.js"></script>
+<script src="vendor/katex/katex.min.js"></script>
+<script src="vendor/hljs/highlight.min.js"></script>
+<script src="vendor/firebase/firebase-app-compat.js"></script>
+<script src="vendor/firebase/firebase-auth-compat.js"></script>
+<script src="vendor/firebase/firebase-firestore-compat.js"></script>
+<script src="vendor/firebase/firebase-storage-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script src="shared/recur.js"></script>
+<script src="markdown.js"></script>
+<script src="store.js"></script>
+<script src="cloud.js"></script>
+<script src="ai-relay.js"></script>
+<script src="picker.js"></script>
+<script src="tree.js"></script>
+<script src="mdbox.js"></script>
+<script src="nav.js"></script>
+<script src="calendar.js"></script>
+<script src="deadlines.js"></script>
+<script src="files.js"></script>
+<script src="links.js"></script>
+<script src="notes.js"></script>
+<script src="detail.js"></script>
+<script src="nl.js"></script>
+<script src="classroom.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

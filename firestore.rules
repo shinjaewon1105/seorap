@@ -1,0 +1,242 @@
+rules_version = '2';
+
+/* ══════════════════════════════════════════════════════════════════
+   서랍 — Firestore 보안 규칙
+
+   들어오는 문이 다섯 겹이다.
+
+   1) **사람**  — 로그인해야 하고, **이메일/비밀번호로 들어온 토큰**이어야 한다.
+   2) **확인**  — 이메일 확인 링크를 누른 사람이어야 한다.
+   3) **승인**  — **관리자가 승인한 사람**이어야 한다. 관리자 자신은 늘 통과한다.
+   4) **자리**  — `users/{내 uid}` 아래의 **정해진 칸에만**. 그 밖은 규칙이 없어 전부 거부.
+   5) **모양**  — 문서마다 칸 수와 글자 수에 뚜껑.
+
+   읽기는 2·3번을 묻지 않는다. 확인·승인을 기다리는 동안에도
+   무엇이 막혔는지 알 수 있어야 하기 때문이다.
+
+   관리자는 `config/admin` 문서 하나로 정한다. **처음 한 사람만 쓸 수 있고**
+   그 뒤로는 바꿀 수 없다(고치려면 콘솔에서 직접). 그래서 가입을 열어 두어도
+   아무나 관리자가 되지는 않는다 — 먼저 등록한 사람이 임자다.
+
+   ── 한 겹씩 푸는 법 ──
+   `mine(uid)` 에서 `verified()` 나 `approved(uid)` 를 지우고
+   `npx firebase deploy --only firestore:rules`
+   ══════════════════════════════════════════════════════════════════ */
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ────────────────────────────── 사람 ──────────────────────────────
+
+    function me(uid) {
+      return request.auth != null
+          && request.auth.uid == uid
+          && request.auth.token.firebase.sign_in_provider == 'password';
+    }
+
+    function verified() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    function adminDoc() { return /databases/$(database)/documents/config/admin; }
+
+    function adminUid() {
+      return exists(adminDoc()) ? get(adminDoc()).data.uid : '';
+    }
+
+    function isAdmin() {
+      return request.auth != null && request.auth.uid == adminUid();
+    }
+
+    function memberDoc(uid) { return /databases/$(database)/documents/members/$(uid); }
+
+    // 관리자는 스스로 승인돼 있다. 아니면 members 문서가 approved 여야 한다.
+    function approved(uid) {
+      return uid == adminUid()
+          || (exists(memberDoc(uid)) && get(memberDoc(uid)).data.approved == true);
+    }
+
+    function mine(uid) { return me(uid) && verified() && approved(uid); }
+
+    // ────────────────────────────── 모양 ──────────────────────────────
+
+    function str(d, k, max) {
+      return !(k in d) || (d[k] is string && d[k].size() <= max);
+    }
+
+    function list(d, k, max) {
+      return !(k in d) || (d[k] is list && d[k].size() <= max);
+    }
+
+    function base(d, id, keys) {
+      return d.keys().size() <= keys
+          && d.id is string && d.id == id && d.id.size() <= 64
+          && d.updatedAt is string && d.updatedAt.size() <= 40
+          && str(d, 'folder', 130);          // 세 단계 × 40자 + 구분자
+    }
+
+    /* ───────────────────────── 관리자와 회원 ─────────────────────────
+       `config/admin`  — 처음 한 사람만 만들 수 있다. 고치거나 지울 수 없다.
+       `members/{uid}` — 스스로 "쓰고 싶습니다" 를 approved:false 로 적어 두고,
+                         관리자가 approved 를 true 로 바꿔 준다.
+       ───────────────────────────────────────────────────────────── */
+
+    match /config/admin {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+                    && verified()
+                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.keys().size() <= 4;
+      allow update, delete: if false;          // 콘솔에서만
+    }
+
+    match /members/{uid} {
+      allow read: if isAdmin() || me(uid);
+      allow create: if me(uid) && verified()
+                    && request.resource.data.keys().size() <= 6
+                    && request.resource.data.uid == uid
+                    && request.resource.data.approved == false
+                    && str(request.resource.data, 'email', 320);
+      allow update: if isAdmin()
+                    && request.resource.data.keys().size() <= 6
+                    && request.resource.data.uid == uid
+                    && request.resource.data.approved is bool;
+      allow delete: if isAdmin();
+    }
+
+    // ────────────────────────────── 마감 ──────────────────────────────
+
+    match /users/{uid}/events/{id} {
+      allow read: if me(uid);
+      allow create, update: if mine(uid)
+        && base(request.resource.data, id, 40)
+        && str(request.resource.data, 'title', 500)
+        && str(request.resource.data, 'date', 10)
+        && str(request.resource.data, 'body', 200000)
+        && str(request.resource.data, 'color', 16)
+        && str(request.resource.data, 'kind', 20)
+        && list(request.resource.data, 'attachments', 300)
+        && list(request.resource.data, 'doneDates', 2000)
+        && list(request.resource.data, 'exceptions', 2000);
+      allow delete: if mine(uid);
+    }
+
+    // ────────────────────────────── 필기 ──────────────────────────────
+
+    match /users/{uid}/notes/{id} {
+      allow read: if me(uid);
+      allow create, update: if mine(uid)
+        && base(request.resource.data, id, 20)
+        && str(request.resource.data, 'title', 500)
+        && str(request.resource.data, 'body', 500000);
+      allow delete: if mine(uid);
+    }
+
+    // ────────────────────────────── 링크 ──────────────────────────────
+
+    match /users/{uid}/links/{id} {
+      allow read: if me(uid);
+      allow create, update: if mine(uid)
+        && base(request.resource.data, id, 20)
+        && str(request.resource.data, 'url', 4000)
+        && str(request.resource.data, 'title', 500)
+        && str(request.resource.data, 'note', 20000)
+        && str(request.resource.data, 'owner', 64);
+      allow delete: if mine(uid);
+    }
+
+    // ─────────────────── 파일 (마감에 매이지 않은 첨부) ───────────────────
+
+    match /users/{uid}/files/{id} {
+      allow read: if me(uid);
+      allow create, update: if mine(uid)
+        && base(request.resource.data, id, 30)
+        && str(request.resource.data, 'name', 400)
+        && str(request.resource.data, 'mode', 20);
+      allow delete: if mine(uid);
+    }
+
+    /* ────────────────── 첨부파일의 내용 (Storage 없이) ──────────────────
+       Firebase Storage 는 카드 등록이 필요해서, 카드 없이 갈 때는 파일을
+       조각내서 여기에 담는다. 문서 하나가 1MB 까지라 조각은 700KB 로 자른다.
+
+       머리글(blobs/{id})에 크기·조각 수가 있고, 실제 바이트는 parts/{n} 에 있다.
+       한 개 5MB 까지. 한 사람이 얼마나 썼는지는 meta/usage 가 들고 있는데,
+       규칙은 합계를 셀 수 없어서 그 뚜껑은 앱이 지킨다.
+       ───────────────────────────────────────────────────────────────── */
+
+    match /users/{uid}/blobs/{aid} {
+      allow read: if me(uid);
+      allow create, update: if mine(uid)
+        && request.resource.data.keys().size() <= 10
+        && request.resource.data.size is int
+        && request.resource.data.size >= 0
+        && request.resource.data.size <= 5242880              // 5MB
+        && request.resource.data.chunks is int
+        && request.resource.data.chunks >= 1
+        && request.resource.data.chunks <= 16
+        && str(request.resource.data, 'name', 400)
+        && str(request.resource.data, 'mime', 200)
+        && str(request.resource.data, 'updatedAt', 40);
+      allow delete: if mine(uid);
+
+      match /parts/{pid} {
+        allow read: if me(uid);
+        allow create, update: if mine(uid)
+          && request.resource.data.keys().size() <= 3
+          && request.resource.data.b is bytes
+          && request.resource.data.b.size() <= 740000;
+        allow delete: if mine(uid);
+      }
+    }
+
+    // ──────────── 폴더 나무 · 지운 흔적 · 쓴 양 · PC 맥박 ────────────
+
+    match /users/{uid}/meta/{doc} {
+      allow read: if me(uid);
+      allow create, update: if mine(uid) && (
+        ((doc == 'folders' || doc == 'tombs')
+          && request.resource.data.keys().size() <= 5
+          && request.resource.data.list is list
+          && request.resource.data.list.size() <= 20000)
+        ||
+        (doc == 'usage'
+          && request.resource.data.keys().size() <= 4
+          && request.resource.data.bytes is int
+          && request.resource.data.bytes >= 0)
+        ||
+        (doc == 'worker'
+          && request.resource.data.keys().size() <= 6
+          && request.resource.data.at is string
+          && request.resource.data.at.size() <= 40
+          && list(request.resource.data, 'models', 100))
+      );
+      allow delete: if mine(uid);
+    }
+
+    /* ───────────────────────────── AI 심부름 ─────────────────────────────
+       Llama 는 각자의 컴퓨터에서 돈다. 휴대폰은 여기에 부탁을 적어 두고,
+       켜져 있는 자기 PC 앱이 집어다 돌리고 답을 적어 준다.
+       바깥으로 구멍을 내지 않고 파이어베이스만 거친다.
+       ───────────────────────────────────────────────────────────────── */
+
+    match /users/{uid}/ai/{jobId} {
+      allow read: if me(uid);
+      allow create: if mine(uid)
+        && request.resource.data.keys().size() <= 12
+        && request.resource.data.status == 'pending'
+        && request.resource.data.op in ['parse', 'format', 'organize']
+        && request.resource.data.input is string
+        && request.resource.data.input.size() <= 200000
+        && request.resource.data.createdAt is string;
+      allow update: if mine(uid)
+        && request.resource.data.keys().size() <= 12
+        && request.resource.data.op == resource.data.op
+        && request.resource.data.status in ['pending', 'working', 'done', 'error']
+        && str(request.resource.data, 'input', 200000)
+        && str(request.resource.data, 'out', 400000)
+        && str(request.resource.data, 'err', 2000);
+      allow delete: if mine(uid);
+    }
+  }
+}

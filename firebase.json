@@ -1,0 +1,41 @@
+{
+  "hosting": {
+    "public": "web",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ],
+    "headers": [
+      {
+        "comment": "index.html 까지 포함해서 늘 다시 물어본다. 안 바뀌었으면 304 라 값이 거의 안 든다. 이게 없으면 고친 것이 한 시간 동안 안 보인다(Hosting 기본이 max-age=3600).",
+        "source": "**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      },
+      {
+        "comment": "글꼴과 그림은 잘 안 바뀐다.",
+        "source": "**/*.@(woff|woff2|ttf|png|jpg|svg|ico)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "max-age=604800"
+          }
+        ]
+      }
+    ]
+  },
+  "firestore": {
+    "rules": "firestore.rules"
+  }
+}
